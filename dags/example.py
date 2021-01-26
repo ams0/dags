@@ -1,37 +1,41 @@
-#
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-"""This dag only runs some simple tasks to test Airflow's task execution."""
+import logging
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from airflow.models.dag import DAG
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
 
-now = datetime.now()
-now_to_the_hour = (now - timedelta(0, 0, 0, 0, 0, 3)).replace(minute=0, second=0, microsecond=0)
-START_DATE = now_to_the_hour
-DAG_NAME = 'test_dag_v1'
+log = logging.getLogger(__name__)
 
-default_args = {'owner': 'airflow', 'depends_on_past': True, 'start_date': days_ago(2)}
-dag = DAG(DAG_NAME, schedule_interval='*/10 * * * *', default_args=default_args)
+dag = DAG(
+    "example_using_k8s_executor",
+    schedule_interval="0 1 * * *",
+    catchup=False,
+    default_args={
+        "owner": "airflow",
+        "depends_on_past": False,
+        "start_date": datetime(2020, 8, 7),
+        "email_on_failure": False,
+        "email_on_retry": False,
+        "retries": 2,
+        "retry_delay": timedelta(seconds=30),
+        "sla": timedelta(hours=23),
+    },
+)
 
-run_this_1 = DummyOperator(task_id='run_this_1', dag=dag)
-run_this_2 = DummyOperator(task_id='run_this_2', dag=dag)
-run_this_2.set_upstream(run_this_1)
-run_this_3 = DummyOperator(task_id='run_this_3', dag=dag)
-run_this_3.set_upstream(run_this_2)
+def use_airflow_binary():
+    rc = os.system("airflow -h")
+    assert rc == 0
+
+with dag:
+    task_1 = PythonOperator(
+        task_id="task-1",
+        python_callable=use_airflow_binary,
+    )
+    task_2 = PythonOperator(
+        task_id="task-2",
+        python_callable=use_airflow_binary,
+    )
+
+task_1 >> task_2
